@@ -1,4 +1,5 @@
 #include "ServerManager.hpp"
+#include "Server.hpp"
 
 /*============================================================================*/
 /****************************  Static variables  ******************************/
@@ -49,3 +50,48 @@ ServerManager& ServerManager::operator=(const ServerManager& object)
 /*============================================================================*/
 /*********************************  Util  *************************************/
 /*============================================================================*/
+
+// Server 객체를 생성하여 _servers 벡터에 저장한다.
+void ServerManger::initServers()
+{
+    ConfigureManager CM(this->_config_file_path);
+    CM.parseConfigs()
+    it = begin()
+    ite = end()
+    for (; it != ite; it++)
+    {
+        makeServer()
+    }
+    
+
+
+}
+
+void ServerManager::makeServer(struct s_config)
+{
+    try
+    {
+        Server _new_server(struct s_config server_conf);
+        this->_servers.push_back(_new_server);
+    }
+    catch (std::exception& )
+    {
+        
+    }
+    
+}
+
+bool ServerManger::runServer()
+{
+    // infinite loop
+        // select
+        // accept
+        
+        //read
+        //write
+}
+
+void ServerManager::exitServers()
+{
+
+}

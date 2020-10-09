@@ -1,14 +1,16 @@
 /* ************************************************************************** */
 /*                                                                            */
 /*                                                        :::      ::::::::   */
-/*   HTTPServer.c                                       :+:      :+:    :+:   */
+/*   test.cpp                                           :+:      :+:    :+:   */
 /*                                                    +:+ +:+         +:+     */
 /*   By: yohlee <yohlee@student.42seoul.kr>         +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2020/10/09 18:24:27 by yohlee            #+#    #+#             */
-/*   Updated: 2020/10/09 18:25:42 by yohlee           ###   ########.fr       */
+/*   Updated: 2020/10/09 18:36:46 by yohlee           ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
+
+#include <iostream>
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -23,18 +25,25 @@
 
 void* request_handler(void* arg);
 void send_data(FILE* fp, char* ct, char* file_name);
-char* content_type(char* file);
+const char* content_type(char* file);
 void send_error(FILE* fp);
-void error_handling(char* message);
+void error_handling(const char* message);
 
 int main(int argc, char *argv[])
 {
-	int server_socket, client_socket;
+	int server_socket;
 	struct sockaddr_in server_address;
-	struct sockaddr_in client_address;
-	int client_address_len;
+
 	char buf[BUFFER_SIZE];
-	pthread_t t_id;
+
+	fd_set read_fds;
+	fd_set write_fds;
+	fd_set exception_fds;
+	fd_set tmp;
+
+	int fd_max;
+
+	struct timeval timeout;
 
 	if (argc!=2)
 	{
@@ -42,24 +51,81 @@ int main(int argc, char *argv[])
 		exit(1);
 	}
 	
-	server_socket=socket(PF_INET, SOCK_STREAM, 0);
+	server_socket = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
+
 	memset(&server_address, 0, sizeof(server_address));
-	server_address.sin_family=AF_INET;
-	server_address.sin_addr.s_addr=htonl(INADDR_ANY);
-	server_address.sin_port = htons(atoi(argv[1]));
-	if (bind(server_socket, (struct sockaddr*)&server_address, sizeof(server_address))==-1)
+
+	server_address.sin_family = AF_INET;
+	server_address.sin_addr.s_addr = htonl(INADDR_ANY);
+	server_address.sin_port = htons(stoi(std::string(argv[1])));
+
+	if (bind(server_socket, reinterpret_cast<struct sockaddr *>(&server_address), static_cast<socklen_t>(sizeof(server_address))))
 		error_handling("bind() error");
 	if (listen(server_socket, 20)==-1)
 		error_handling("listen() error");
 
+	FD_ZERO(&read_fds);
+	FD_ZERO(&write_fds);
+	FD_ZERO(&exception_fds);
+
+	FD_SET(server_socket, &read_fds);
+	FD_SET(server_socket, &write_fds);
+	FD_SET(server_socket, &exception_fds);
+	fd_max = server_socket;
+
 	while(1)
 	{
-		client_address_len=sizeof(client_address);
-		client_socket=accept(server_socket, (struct sockaddr*)&client_address, (socklen_t *)&client_address_len);
-		printf("Connection Request : %s:%d\n", 
-			inet_ntoa(client_address.sin_addr), ntohs(client_address.sin_port));
-		pthread_create(&t_id, NULL, request_handler, &client_socket);
-		pthread_detach(t_id);
+		int fd;
+		int len;
+		int client_socket;
+		struct sockaddr_in client_address;
+		int client_len;
+
+		tmp = read_fds;
+
+		timeout.tv_sec = 5;
+		timeout.tv_usec = 5;
+
+		if (select(fd_max + 1, &tmp, 0, 0, &timeout) == -1)
+			std::cerr << "Select Error" << std::endl;
+
+		for (fd = 0; fd < fd_max + 1; fd++)
+		{
+			if (FD_ISSET(fd, &tmp))
+			{
+				if (fd == server_socket)
+				{
+					client_len = sizeof(client_address);
+					if ((client_socket = accept(server_socket, reinterpret_cast<struct sockaddr *>(&client_address), reinterpret_cast<socklen_t *>(&client_len))) == -1)
+						std::cerr << "Accept Error" << std::endl;
+
+					FD_SET(client_socket, &read_fds);
+					if (fd_max < client_socket)
+						fd_max = client_socket;
+
+					std::cout << "Client Connect FD = " << client_socket << std::endl;
+				}
+				else
+				{
+					if ((len = read(fd, buf, BUFFER_SIZE)) < 0)
+					{
+						std::cerr<<"read error"<<std::endl;
+					}
+					if (len == 0)
+					{
+						FD_CLR(fd, &read_fds);
+						close(fd);
+						std::cout<<"Client Disconnect: "<<fd<<std::endl;
+					}
+					else
+					{
+						write(fd, buf, len);
+					}
+				}
+				
+			}
+		}
+
 	}
 	close(server_socket);
 	return 0;
@@ -136,7 +202,7 @@ void send_data(FILE* fp, char* ct, char* file_name)
 	fclose(fp);
 }
 
-char* content_type(char* file)
+const char* content_type(char* file)
 {
 	char extension[SMALL_BUF];
 	char file_name[SMALL_BUF];
@@ -167,7 +233,7 @@ void send_error(FILE* fp)
 	fflush(fp);
 }
 
-void error_handling(char* message)
+void error_handling(const char* message)
 {
 	fputs(message, stderr);
 	fputc('\n', stderr);

@@ -1,10 +1,7 @@
-#include <iostream>
-#include <vector>
-#include <algorithm>
-
 #include <arpa/inet.h>
 #include <stdio.h>
 #include <signal.h>
+#include <sys/stat.h>
 
 #include <time.h>
 #include <unistd.h>
@@ -31,130 +28,65 @@ int webserv(int sockfd);
 int protocol_parser(char *str, struct user_request *request);
 int sendpage(int sockfd, char *filename, char *http_ver, char *codemsg);
 
+
 int main(int argc, char **argv)
 {
-
-	int server_socket;
-	int client_socket;
-	socklen_t client_len;
+	int listenfd;
+	int clientfd;
+	socklen_t clilen;
+	int pid;
 	int optval = 1;
-	struct sockaddr_in server_address;
-	struct sockaddr_in client_address;
+	struct sockaddr_in addr, cliaddr;
 
-	fd_set read_fds;
-	fd_set write_fds;
-	fd_set exception_fds;
-	int fd_max;
-
-	struct timeval timeout;
-
-	if (argc !=2 )
+	if(argc !=2 )
 	{
-		std::cerr << "Argument Error" << std::endl;
-		return (1);
+		printf("Usage : %s [root directory]\n", argv[0]);
+		return 1;
 	}
+	memset(root, 0x00, MAXLINE);
+	sprintf(root, "%s", argv[1]);
 
-	if ((server_socket = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP)) == -1)
+	if((listenfd = socket(AF_INET, SOCK_STREAM, 0)) == -1)
 	{
-		std::cerr << "Socket Error" << std::endl;
 		return 1;
 	}
 
-	setsockopt(server_socket, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof(optval));
+	setsockopt(listenfd, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof(optval));
+	memset(&addr, 0x00, sizeof(addr));
+	addr.sin_family = AF_INET;
+	addr.sin_addr.s_addr = htonl(INADDR_ANY);
+	addr.sin_port = htons(PORTNUM);
 
-	memset(&server_address, 0x00, sizeof(server_address));
-
-	server_address.sin_family = AF_INET;
-	server_address.sin_addr.s_addr = htonl(INADDR_ANY);
-	// server_address.sin_port = htons(PORTNUM);
-	server_address.sin_port = htons(stoi(std::string(argv[1])));
-
-	if (bind(server_socket, reinterpret_cast<struct sockaddr *>(&server_address), static_cast<socklen_t>(sizeof(server_address))))
+	if(bind(listenfd, (struct sockaddr *)&addr, sizeof(addr)) == -1)
 	{
-		std::cerr<<"Bind error"<<std::endl;
+		return 1;
+	}
+	if(listen(listenfd, 5) == -1)
+	{
 		return 1;
 	}
 
-	if (listen(server_socket, 15) == -1)
-	{
-		//error처리
-		std::cerr<<"Listen error"<<std::endl;
-	}
-
-	FD_ZERO(&read_fds);
-	FD_ZERO(&write_fds);
-	FD_ZERO(&exception_fds);
-
-	FD_SET(server_socket, &read_fds);
-	FD_SET(server_socket, &write_fds);
-	FD_SET(server_socket, &exception_fds);
-
-	fd_max = server_socket;
-
+	signal(SIGCHLD, SIG_IGN);
 	while(1)
 	{
-
-		int fd;
-
-		fd_set tmp;
-
-		timeout.tv_sec = 5;
-		timeout.tv_usec = 5;
-
-		if ((select(fd_max + 1), &tmp, 0, 0, &timeout) == -1)
-			std::cerr << "Select Error" << std::endl;
-
-		for (fd = 0; fd < fd_max + 1; fd++)
-		{
-			if (FD_ISSET(fd, &tmp))
-			{
-				if (fd == server_socket)
-				{
-					client_len = sizeof(client_address);
-					if ((client_socket = accept(server_socket, reinterpret_cast<struct sockaddr *>(&client_address), reinterpret_cast<socklen_t *>(&client_len))) == -1)
-						std::cerr << "Accept Error" << std::endl;
-					FD_SET(client_socket, &read_fds);
-					if (fd_max < client_socket)
-						fd_max = client_socket;
-					std::cout << "Client Connect FD = " << client_socket << std::endl;
-				}
-				else
-				{
-					if ((len = read(fd, buf, BUFFER_SIZE)) < 0)
-						std::cerr << "Read Error" << std::endl;
-					if (len == 0)
-					{
-						FD_CLR(fd, &read_fds);
-						close(fd);
-						std::cout << "Client Disconnect: " << fd << std::endl;
-					}
-					else
-						write(fd, buf, len);
-				}
-			}
-		}
-
-
-
-
-		client_len = sizeof(client_len);
-		client_socket = accept(server_socket , (struct sockaddr *)&client_address, &client_len);
-		if (client_socket == -1)
+		clilen = sizeof(clilen);
+		clientfd = accept(listenfd , (struct sockaddr *)&cliaddr, &clilen);
+		if(clientfd == -1)
 		{
 			return 1;
 		}
-		// pid = fork();
-		// if(pid == 0)
-		// {
-		// 	webserv(client_socket);
-		// 	close(client_socket);
-		// 	exit(0);
-		// }
-		// if(pid == -1)
-		// {
-		// 	return 1;
-		// }
-		// close(client_socket);
+		pid = fork();
+		if(pid == 0)
+		{
+			webserv(clientfd);
+			close(clientfd);
+			exit(0);
+		}
+		if(pid == -1)
+		{
+			return 1;
+		}
+		close(clientfd);
 	}
 }
 
