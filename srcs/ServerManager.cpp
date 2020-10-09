@@ -83,6 +83,20 @@ void ServerManager::makeServer(struct s_config)
 
 bool ServerManger::runServer()
 {
+    timeval timeout;
+
+    timeout.tv_sec = 5;
+    timeout.tv_usec = 5;
+
+    while (true)
+    {
+        if (select(fd_max + 1, &this->copy_read_fds, &this->copy_write_fds, &this->copy_exteption_fds, &timeout) == -1)
+        {
+            std::cerr << "Select Error" << std::endl;
+        }
+
+        if (accpet())
+    }
     // infinite loop
         // select
         // accept
